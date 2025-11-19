@@ -254,6 +254,16 @@
                 <div class="threshold-desc">Only show matches above this confidence level</div>
             </div>
 
+            <div class="form-group" style="margin-bottom: 25px;">
+                <label style="display: flex; align-items: center; cursor: pointer; font-weight: 500;">
+                    <input type="checkbox" id="use_embeddings" name="use_embeddings" value="1" style="margin-right: 10px; width: 18px; height: 18px; cursor: pointer;">
+                    <span>Enable Semantic Matching (AI-powered)</span>
+                </label>
+                <div style="font-size: 12px; color: #718096; margin-top: 8px; margin-left: 28px;">
+                    Uses AI to understand field meanings beyond text patterns. May be slower but more accurate for conceptually similar fields.
+                </div>
+            </div>
+
             <button type="submit" id="submitBtn">Match Fields</button>
         </form>
 

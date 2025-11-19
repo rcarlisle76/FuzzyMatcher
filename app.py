@@ -49,8 +49,9 @@ def match_fields():
     if not (allowed_file(ventiv_file.filename) and allowed_file(salesforce_file.filename)):
         return jsonify({'error': 'Only .txt and .csv files are allowed'}), 400
 
-    # Get threshold from form
+    # Get threshold and semantic matching option from form
     threshold = int(request.form.get('threshold', 70))
+    use_embeddings = request.form.get('use_embeddings') == '1'
 
     # Save uploaded files
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -65,7 +66,7 @@ def match_fields():
 
     try:
         # Initialize matcher
-        matcher = FieldMatcher(threshold=threshold)
+        matcher = FieldMatcher(threshold=threshold, use_embeddings=use_embeddings)
 
         # Load fields
         ventiv_fields_dict = matcher.load_fields_with_labels(ventiv_path)
@@ -134,6 +135,7 @@ def match_fields():
                              low_conf=low_conf,
                              above_threshold=above_threshold,
                              threshold=threshold,
+                             use_embeddings=use_embeddings,
                              results_file=results_filename,
                              ventiv_count=len(ventiv_fields_dict),
                              salesforce_count=len(salesforce_fields_dict))

@@ -214,6 +214,13 @@
             <div style="color: #718096; font-size: 14px; margin-top: 10px;">
                 Processed {{ ventiv_count }} Ventiv fields against {{ salesforce_count }} Salesforce fields
                 (Threshold: {{ threshold }}%)
+                {% if use_embeddings %}
+                <br>
+                <span style="color: #667eea; font-weight: 600;">✨ Semantic Matching Enabled</span> - Using AI-powered conceptual similarity
+                {% else %}
+                <br>
+                <span style="color: #4a5568;">Fuzzy Matching Only</span> - Text pattern-based matching
+                {% endif %}
             </div>
 
             <div class="actions">
