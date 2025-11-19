@@ -211,16 +211,32 @@ class FieldMatcher:
             print(f"Error reading file {file_path}: {e}")
             sys.exit(1)
 
-    def normalize_field_name(self, field_name: str) -> str:
+    def extract_numbers(self, field_name: str) -> set:
+        """
+        Extract all numbers from a field name
+
+        Args:
+            field_name: Field name to extract numbers from
+
+        Returns:
+            Set of numbers found in the field name
+        """
+        import re
+        numbers = re.findall(r'\d+', field_name)
+        return set(numbers)
+
+    def normalize_field_name(self, field_name: str, preserve_numbers: bool = True) -> str:
         """
         Normalize a field name for better matching by:
         - Splitting camelCase
         - Removing common prefixes and suffixes
         - Expanding abbreviations
         - Standardizing separators
+        - Optionally preserving numbers for accurate matching
 
         Args:
             field_name: Original field name
+            preserve_numbers: If True, keep numbers in the normalized name
 
         Returns:
             Normalized field name
@@ -261,7 +277,11 @@ class FieldMatcher:
             if not token:
                 continue
 
-            # Expand abbreviations
+            # If preserve_numbers is False, skip numeric-only tokens
+            if not preserve_numbers and token.isdigit():
+                continue
+
+            # Expand abbreviations (but not numbers)
             if token in self.abbreviations:
                 expanded_tokens.append(self.abbreviations[token])
             else:
@@ -275,6 +295,7 @@ class FieldMatcher:
     def calculate_confidence(self, source: str, target: str) -> Dict[str, float]:
         """
         Calculate confidence score using fuzzy matching and optionally semantic similarity
+        Applies penalties for number mismatches to prevent matching Address1 to Address3
 
         Args:
             source: Source field name
@@ -283,9 +304,13 @@ class FieldMatcher:
         Returns:
             Dictionary with fuzzy_score, semantic_score, and combined confidence
         """
-        # Normalize field names for better matching
-        source_norm = self.normalize_field_name(source)
-        target_norm = self.normalize_field_name(target)
+        # Extract numbers from both field names
+        source_numbers = self.extract_numbers(source)
+        target_numbers = self.extract_numbers(target)
+
+        # Normalize field names for better matching (with numbers preserved)
+        source_norm = self.normalize_field_name(source, preserve_numbers=True)
+        target_norm = self.normalize_field_name(target, preserve_numbers=True)
 
         # Use multiple matching algorithms on normalized names
         ratio_score = fuzz.ratio(source_norm, target_norm)
@@ -307,10 +332,27 @@ class FieldMatcher:
             orig_token_sort * 0.05
         )
 
+        # Apply number mismatch penalty
+        # If both fields have numbers but they don't match, heavily penalize the score
+        number_penalty = 0.0
+        if source_numbers and target_numbers:
+            # Both have numbers - they should match
+            if source_numbers != target_numbers:
+                # Numbers don't match - apply heavy penalty (e.g., Address 1 vs Address 3)
+                number_penalty = 40.0  # Reduce score by 40 points
+        elif source_numbers or target_numbers:
+            # Only one has numbers - moderate penalty
+            number_penalty = 10.0  # Reduce score by 10 points
+
+        # Apply the penalty
+        fuzzy_score = max(0, fuzzy_score - number_penalty)
+
         # Calculate semantic similarity if embeddings are enabled
         semantic_score = 0.0
         if self.use_embeddings:
             semantic_score = self.calculate_semantic_similarity(source, target)
+            # Also apply number penalty to semantic score
+            semantic_score = max(0, semantic_score - number_penalty)
 
         # Combine scores based on weights
         if self.use_embeddings and semantic_score > 0:
@@ -347,6 +389,7 @@ class FieldMatcher:
     def match_fields(self, ventiv_fields: List[str], salesforce_fields: List[str]) -> List[Dict]:
         """
         Match Ventiv fields to Salesforce fields using fuzzy logic
+        Uses Hungarian algorithm for optimal one-to-one assignment
 
         Args:
             ventiv_fields: List of Ventiv IRM field names
@@ -355,47 +398,62 @@ class FieldMatcher:
         Returns:
             List of match dictionaries
         """
-        matches = []
+        from scipy.optimize import linear_sum_assignment
 
-        # Create a custom scorer that uses normalized field names
-        def normalized_scorer(query, choice, **kwargs):
-            query_norm = self.normalize_field_name(query)
-            choice_norm = self.normalize_field_name(choice)
-            return fuzz.token_sort_ratio(query_norm, choice_norm, **kwargs)
+        n_ventiv = len(ventiv_fields)
+        n_salesforce = len(salesforce_fields)
 
-        for ventiv_field in ventiv_fields:
-            # Find the best match using rapidfuzz with normalized scorer
-            best_match = process.extractOne(
-                ventiv_field,
-                salesforce_fields,
-                scorer=normalized_scorer
-            )
+        # Build cost matrix
+        cost_matrix = np.zeros((n_ventiv, n_salesforce))
+        scores_matrix = {}
 
-            if best_match:
-                sf_field, score, _ = best_match
+        print(f"\nBuilding cost matrix for {n_ventiv} Ventiv fields x {n_salesforce} Salesforce fields...")
 
-                # Calculate more detailed confidence score
+        for i, ventiv_field in enumerate(ventiv_fields):
+            for j, sf_field in enumerate(salesforce_fields):
+                # Calculate confidence score
                 scores = self.calculate_confidence(ventiv_field, sf_field)
 
-                match_data = {
-                    'ventiv_field': ventiv_field,
-                    'salesforce_field': sf_field,
-                    'confidence': scores['confidence'],
-                    'fuzzy_score': scores['fuzzy_score'],
-                    'semantic_score': scores['semantic_score'],
-                    'status': self.get_confidence_status(scores['confidence'])
-                }
+                # Store negative confidence as cost (Hungarian minimizes cost)
+                cost_matrix[i, j] = -scores['confidence']
 
-                matches.append(match_data)
+                # Store scores for later
+                scores_matrix[(i, j)] = scores
+
+        print("Running Hungarian algorithm for optimal one-to-one assignment...")
+
+        # Run Hungarian algorithm
+        row_indices, col_indices = linear_sum_assignment(cost_matrix)
+
+        # Build matches from optimal assignment
+        matches = []
+        for i, j in zip(row_indices, col_indices):
+            ventiv_field = ventiv_fields[i]
+            sf_field = salesforce_fields[j]
+            scores = scores_matrix[(i, j)]
+
+            match_data = {
+                'ventiv_field': ventiv_field,
+                'salesforce_field': sf_field,
+                'confidence': scores['confidence'],
+                'fuzzy_score': scores['fuzzy_score'],
+                'semantic_score': scores['semantic_score'],
+                'status': self.get_confidence_status(scores['confidence'])
+            }
+
+            matches.append(match_data)
 
         # Sort by confidence score (highest first)
         matches.sort(key=lambda x: x['confidence'], reverse=True)
+
+        print(f"✓ Optimal assignment complete: {len(matches)} unique matches\n")
 
         return matches
 
     def match_fields_with_labels(self, ventiv_fields_dict: Dict[str, str], salesforce_fields_dict: Dict[str, str]) -> List[Dict]:
         """
         Match Ventiv fields to Salesforce fields using both API names and labels
+        Uses Hungarian algorithm for optimal one-to-one assignment
 
         Args:
             ventiv_fields_dict: Dictionary mapping Ventiv API names to labels
@@ -404,80 +462,104 @@ class FieldMatcher:
         Returns:
             List of match dictionaries with enhanced information
         """
-        matches = []
+        from scipy.optimize import linear_sum_assignment
 
-        # Create a custom scorer that uses normalized field names
-        def normalized_scorer(query, choice, **kwargs):
-            query_norm = self.normalize_field_name(query)
-            choice_norm = self.normalize_field_name(choice)
-            return fuzz.token_sort_ratio(query_norm, choice_norm, **kwargs)
+        ventiv_fields = list(ventiv_fields_dict.keys())
+        salesforce_fields = list(salesforce_fields_dict.keys())
 
-        for ventiv_field in ventiv_fields_dict.keys():
-            best_api_scores = None
-            best_label_scores = None
-            best_api_match = None
-            best_label_match = None
+        n_ventiv = len(ventiv_fields)
+        n_salesforce = len(salesforce_fields)
 
-            # Match against API names
-            api_names = list(salesforce_fields_dict.keys())
-            api_match = process.extractOne(
-                ventiv_field,
-                api_names,
-                scorer=normalized_scorer
-            )
+        # Build cost matrix: for each Ventiv field, calculate confidence against all SF fields
+        # We'll try matching against both API names and labels and use the better score
+        cost_matrix = np.zeros((n_ventiv, n_salesforce))
+        match_info = {}  # Store which matched better (API name or label) and the value
 
-            if api_match:
-                best_api_match = api_match[0]
-                best_api_scores = self.calculate_confidence(ventiv_field, best_api_match)
+        print(f"\nBuilding cost matrix for {n_ventiv} Ventiv fields x {n_salesforce} Salesforce fields...")
 
-            # Match against labels
-            labels_to_api = {label: api for api, label in salesforce_fields_dict.items()}
-            unique_labels = list(labels_to_api.keys())
+        for i, ventiv_field in enumerate(ventiv_fields):
+            ventiv_label = ventiv_fields_dict[ventiv_field]
 
-            label_match = process.extractOne(
-                ventiv_field,
-                unique_labels,
-                scorer=normalized_scorer
-            )
+            for j, sf_field in enumerate(salesforce_fields):
+                sf_label = salesforce_fields_dict[sf_field]
 
-            if label_match:
-                best_label = label_match[0]
-                best_label_match = labels_to_api[best_label]
-                best_label_scores = self.calculate_confidence(ventiv_field, best_label)
+                # Calculate confidence matching Ventiv field to SF API name
+                api_scores = self.calculate_confidence(ventiv_field, sf_field)
+                api_conf = api_scores['confidence']
 
-            # Choose the best match between API name and label based on confidence
-            api_conf = best_api_scores['confidence'] if best_api_scores else 0
-            label_conf = best_label_scores['confidence'] if best_label_scores else 0
+                # Calculate confidence matching Ventiv field to SF label
+                label_scores = self.calculate_confidence(ventiv_field, sf_label)
+                label_conf = label_scores['confidence']
 
-            if api_conf >= label_conf:
-                final_match = best_api_match
-                final_scores = best_api_scores
-                match_type = 'API Name'
-                matched_value = best_api_match
-            else:
-                final_match = best_label_match
-                final_scores = best_label_scores
-                match_type = 'Label'
-                matched_value = salesforce_fields_dict[best_label_match]
+                # Also try matching Ventiv label to SF API and label
+                ventiv_label_to_api_scores = self.calculate_confidence(ventiv_label, sf_field)
+                ventiv_label_to_api_conf = ventiv_label_to_api_scores['confidence']
 
-            if final_match and final_scores:
-                match_data = {
-                    'ventiv_field': ventiv_field,
-                    'ventiv_label': ventiv_fields_dict[ventiv_field],
-                    'salesforce_field': final_match,
-                    'salesforce_label': salesforce_fields_dict[final_match],
-                    'confidence': final_scores['confidence'],
-                    'fuzzy_score': final_scores['fuzzy_score'],
-                    'semantic_score': final_scores['semantic_score'],
-                    'status': self.get_confidence_status(final_scores['confidence']),
-                    'matched_on': match_type,
+                ventiv_label_to_label_scores = self.calculate_confidence(ventiv_label, sf_label)
+                ventiv_label_to_label_conf = ventiv_label_to_label_scores['confidence']
+
+                # Find the best match among all combinations
+                best_conf = max(api_conf, label_conf, ventiv_label_to_api_conf, ventiv_label_to_label_conf)
+
+                # Determine which match was best
+                if best_conf == api_conf:
+                    best_scores = api_scores
+                    match_type = 'API Name'
+                    matched_value = sf_field
+                elif best_conf == label_conf:
+                    best_scores = label_scores
+                    match_type = 'Label'
+                    matched_value = sf_label
+                elif best_conf == ventiv_label_to_api_conf:
+                    best_scores = ventiv_label_to_api_scores
+                    match_type = 'Ventiv Label to API'
+                    matched_value = sf_field
+                else:
+                    best_scores = ventiv_label_to_label_scores
+                    match_type = 'Ventiv Label to Label'
+                    matched_value = sf_label
+
+                # Store negative confidence as cost (Hungarian minimizes cost)
+                cost_matrix[i, j] = -best_conf
+
+                # Store match info for later
+                match_info[(i, j)] = {
+                    'scores': best_scores,
+                    'match_type': match_type,
                     'matched_value': matched_value
                 }
 
-                matches.append(match_data)
+        print("Running Hungarian algorithm for optimal one-to-one assignment...")
+
+        # Run Hungarian algorithm - returns row indices and col indices
+        row_indices, col_indices = linear_sum_assignment(cost_matrix)
+
+        # Build matches from optimal assignment
+        matches = []
+        for i, j in zip(row_indices, col_indices):
+            ventiv_field = ventiv_fields[i]
+            sf_field = salesforce_fields[j]
+            info = match_info[(i, j)]
+
+            match_data = {
+                'ventiv_field': ventiv_field,
+                'ventiv_label': ventiv_fields_dict[ventiv_field],
+                'salesforce_field': sf_field,
+                'salesforce_label': salesforce_fields_dict[sf_field],
+                'confidence': info['scores']['confidence'],
+                'fuzzy_score': info['scores']['fuzzy_score'],
+                'semantic_score': info['scores']['semantic_score'],
+                'status': self.get_confidence_status(info['scores']['confidence']),
+                'matched_on': info['match_type'],
+                'matched_value': info['matched_value']
+            }
+
+            matches.append(match_data)
 
         # Sort by confidence score (highest first)
         matches.sort(key=lambda x: x['confidence'], reverse=True)
+
+        print(f"✓ Optimal assignment complete: {len(matches)} unique matches\n")
 
         return matches
 
