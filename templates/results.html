@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Matching Results - FuzzyMatcher</title>
+    <title>Matching Results - Riskonnect Migration Services</title>
     <style>
         * {
             margin: 0;
@@ -46,7 +46,7 @@
             background: #f7fafc;
             padding: 20px;
             border-radius: 8px;
-            border-left: 4px solid #667eea;
+            border-left: 4px solid #0066cc;
         }
 
         .stat-card.high { border-left-color: #48bb78; }
@@ -84,14 +84,14 @@
         }
 
         .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #0066cc 0%, #00a8e8 100%);
             color: white;
         }
 
         .btn-secondary {
             background: white;
-            color: #667eea;
-            border: 2px solid #667eea;
+            color: #0066cc;
+            border: 2px solid #0066cc;
         }
 
         .btn:hover {
@@ -190,7 +190,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>✨ Matching Results</h1>
+            <h1 style="color: #0066cc;">Matching Results</h1>
 
             <div class="stats">
                 <div class="stat-card">
@@ -216,7 +216,7 @@
                 (Threshold: {{ threshold }}%)
                 {% if use_embeddings %}
                 <br>
-                <span style="color: #667eea; font-weight: 600;">✨ Semantic Matching Enabled</span> - Using AI-powered conceptual similarity
+                <span style="color: #0066cc; font-weight: 600;">✨ Semantic Matching Enabled</span> - Using AI-powered conceptual similarity
                 {% else %}
                 <br>
                 <span style="color: #4a5568;">Fuzzy Matching Only</span> - Text pattern-based matching
