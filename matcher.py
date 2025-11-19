@@ -278,13 +278,13 @@ class FieldMatcher:
 
         return matches
 
-    def match_fields_with_labels(self, ventiv_fields: List[str], salesforce_fields_dict: Dict[str, str]) -> List[Dict]:
+    def match_fields_with_labels(self, ventiv_fields_dict: Dict[str, str], salesforce_fields_dict: Dict[str, str]) -> List[Dict]:
         """
         Match Ventiv fields to Salesforce fields using both API names and labels
 
         Args:
-            ventiv_fields: List of Ventiv IRM field names
-            salesforce_fields_dict: Dictionary mapping API names to labels
+            ventiv_fields_dict: Dictionary mapping Ventiv API names to labels
+            salesforce_fields_dict: Dictionary mapping Salesforce API names to labels
 
         Returns:
             List of match dictionaries with enhanced information
@@ -297,7 +297,7 @@ class FieldMatcher:
             choice_norm = self.normalize_field_name(choice)
             return fuzz.token_sort_ratio(query_norm, choice_norm, **kwargs)
 
-        for ventiv_field in ventiv_fields:
+        for ventiv_field in ventiv_fields_dict.keys():
             best_api_confidence = 0
             best_label_confidence = 0
             best_api_match = None
@@ -345,6 +345,7 @@ class FieldMatcher:
             if final_match:
                 match_data = {
                     'ventiv_field': ventiv_field,
+                    'ventiv_label': ventiv_fields_dict[ventiv_field],
                     'salesforce_field': final_match,
                     'salesforce_label': salesforce_fields_dict[final_match],
                     'confidence': final_confidence,
@@ -387,8 +388,21 @@ class FieldMatcher:
         df = pd.DataFrame(matches)
 
         # Rename columns based on what's available
-        if 'salesforce_label' in df.columns:
-            # Enhanced format with labels
+        if 'salesforce_label' in df.columns and 'ventiv_label' in df.columns:
+            # Full format with both Ventiv and Salesforce labels
+            column_map = {
+                'ventiv_field': 'Ventiv_Field',
+                'ventiv_label': 'Ventiv_Label',
+                'salesforce_field': 'Salesforce_Field',
+                'salesforce_label': 'Salesforce_Label',
+                'confidence': 'Confidence_Score',
+                'status': 'Status',
+                'matched_on': 'Matched_On',
+                'matched_value': 'Matched_Value'
+            }
+            df = df.rename(columns=column_map)
+        elif 'salesforce_label' in df.columns:
+            # Salesforce labels only
             column_map = {
                 'ventiv_field': 'Ventiv_Field',
                 'salesforce_field': 'Salesforce_API_Name',
@@ -456,19 +470,26 @@ class FieldMatcher:
         print(f"Medium Confidence (60-79%): {med_conf}")
         print(f"Low Confidence (<60%): {low_conf}")
 
-        print("\n" + "-"*120)
+        print("\n" + "-"*160)
 
         # Check if we have label information
-        has_labels = len(matches) > 0 and 'salesforce_label' in matches[0]
+        has_ventiv_labels = len(matches) > 0 and 'ventiv_label' in matches[0]
+        has_sf_labels = len(matches) > 0 and 'salesforce_label' in matches[0]
 
-        if has_labels:
+        if has_ventiv_labels and has_sf_labels:
+            print(f"{'Ventiv Field':<25} {'Ventiv Label':<25} {'SF Field':<25} {'SF Label':<25} {'Conf%':<8} {'Match':<10} {'Status'}")
+        elif has_sf_labels:
             print(f"{'Ventiv Field':<25} {'SF API Name':<30} {'SF Label':<30} {'Conf%':<8} {'Match':<10} {'Status'}")
         else:
             print(f"{'Ventiv Field':<30} {'Salesforce Field':<35} {'Conf%':<8} {'Status'}")
-        print("-"*120)
+        print("-"*160)
 
         for match in matches[:20]:  # Show top 20
-            if has_labels:
+            if has_ventiv_labels and has_sf_labels:
+                print(f"{match['ventiv_field']:<25} {match['ventiv_label']:<25} "
+                      f"{match['salesforce_field']:<25} {match['salesforce_label']:<25} "
+                      f"{match['confidence']:<8} {match['matched_on']:<10} {match['status']}")
+            elif has_sf_labels:
                 print(f"{match['ventiv_field']:<25} {match['salesforce_field']:<30} "
                       f"{match['salesforce_label']:<30} {match['confidence']:<8} "
                       f"{match['matched_on']:<10} {match['status']}")
@@ -537,27 +558,25 @@ def main():
 
     # Load field lists
     print(f"Loading Ventiv IRM fields from: {args.ventiv}")
-    ventiv_fields = matcher.load_fields(args.ventiv)
-    print(f"Loaded {len(ventiv_fields)} Ventiv fields")
+    ventiv_fields_dict = matcher.load_fields_with_labels(args.ventiv)
+    print(f"Loaded {len(ventiv_fields_dict)} Ventiv fields")
 
     print(f"Loading Salesforce API fields from: {args.salesforce}")
     salesforce_fields_dict = matcher.load_fields_with_labels(args.salesforce)
     print(f"Loaded {len(salesforce_fields_dict)} Salesforce fields")
 
     # Determine if we have labels (CSV format with 2 columns)
-    has_labels = False
-    for api_name, label in salesforce_fields_dict.items():
-        if api_name != label:
-            has_labels = True
-            break
+    has_ventiv_labels = any(api != label for api, label in ventiv_fields_dict.items())
+    has_sf_labels = any(api != label for api, label in salesforce_fields_dict.items())
 
     # Perform matching
     print("\nPerforming fuzzy matching...")
-    if has_labels:
-        print("Using both API names and labels for matching...")
-        matches = matcher.match_fields_with_labels(ventiv_fields, salesforce_fields_dict)
+    if has_ventiv_labels or has_sf_labels:
+        print("Using API names and labels for matching...")
+        matches = matcher.match_fields_with_labels(ventiv_fields_dict, salesforce_fields_dict)
     else:
         print("Using API names only for matching...")
+        ventiv_fields = list(ventiv_fields_dict.keys())
         salesforce_fields = list(salesforce_fields_dict.keys())
         matches = matcher.match_fields(ventiv_fields, salesforce_fields)
 

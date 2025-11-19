@@ -68,20 +68,19 @@ def match_fields():
         matcher = FieldMatcher(threshold=threshold)
 
         # Load fields
-        ventiv_fields = matcher.load_fields(ventiv_path)
+        ventiv_fields_dict = matcher.load_fields_with_labels(ventiv_path)
         salesforce_fields_dict = matcher.load_fields_with_labels(salesforce_path)
 
         # Determine if we have labels
-        has_labels = False
-        for api_name, label in salesforce_fields_dict.items():
-            if api_name != label:
-                has_labels = True
-                break
+        has_ventiv_labels = any(api != label for api, label in ventiv_fields_dict.items())
+        has_sf_labels = any(api != label for api, label in salesforce_fields_dict.items())
+        has_labels = has_ventiv_labels or has_sf_labels
 
         # Perform matching
         if has_labels:
-            matches = matcher.match_fields_with_labels(ventiv_fields, salesforce_fields_dict)
+            matches = matcher.match_fields_with_labels(ventiv_fields_dict, salesforce_fields_dict)
         else:
+            ventiv_fields = list(ventiv_fields_dict.keys())
             salesforce_fields = list(salesforce_fields_dict.keys())
             matches = matcher.match_fields(ventiv_fields, salesforce_fields)
 
@@ -127,6 +126,8 @@ def match_fields():
         return render_template('results.html',
                              matches=matches,
                              has_labels=has_labels,
+                             has_ventiv_labels=has_ventiv_labels,
+                             has_sf_labels=has_sf_labels,
                              total_matches=total_matches,
                              high_conf=high_conf,
                              med_conf=med_conf,
@@ -134,7 +135,7 @@ def match_fields():
                              above_threshold=above_threshold,
                              threshold=threshold,
                              results_file=results_filename,
-                             ventiv_count=len(ventiv_fields),
+                             ventiv_count=len(ventiv_fields_dict),
                              salesforce_count=len(salesforce_fields_dict))
 
     except Exception as e:

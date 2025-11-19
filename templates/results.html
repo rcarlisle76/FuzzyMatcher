@@ -233,9 +233,14 @@
                     <thead>
                         <tr>
                             <th>Ventiv Field</th>
-                            <th>Salesforce API Name</th>
-                            {% if has_labels %}
+                            {% if has_ventiv_labels %}
+                            <th>Ventiv Label</th>
+                            {% endif %}
+                            <th>Salesforce Field</th>
+                            {% if has_sf_labels %}
                             <th>Salesforce Label</th>
+                            {% endif %}
+                            {% if has_labels %}
                             <th>Matched On</th>
                             {% endif %}
                             <th>Confidence</th>
@@ -246,10 +251,15 @@
                         {% for match in matches %}
                         {% if match.confidence >= threshold %}
                         <tr>
-                            <td><strong>{{ match.ventiv_field }}</strong></td>
+                            <td><code style="background: #f7fafc; padding: 2px 6px; border-radius: 3px; font-size: 13px;">{{ match.ventiv_field }}</code></td>
+                            {% if has_ventiv_labels %}
+                            <td><strong>{{ match.ventiv_label }}</strong></td>
+                            {% endif %}
                             <td><code style="background: #f7fafc; padding: 2px 6px; border-radius: 3px; font-size: 13px;">{{ match.salesforce_field }}</code></td>
+                            {% if has_sf_labels %}
+                            <td><strong>{{ match.salesforce_label }}</strong></td>
+                            {% endif %}
                             {% if has_labels %}
-                            <td>{{ match.salesforce_label }}</td>
                             <td><span class="match-type">{{ match.matched_on }}</span></td>
                             {% endif %}
                             <td><strong>{{ "%.1f"|format(match.confidence) }}%</strong></td>

@@ -1,0 +1,24 @@
+B_ADDRESS1_S,Street Address Line 1
+B_ADDRESS2_S,Street Address Line 2
+B_ADDRESS3_S,Street Address Line 3
+B_CITY_S,City
+B_STATE_L,State
+B_COUNTRY_L,Country
+B_POSTAL_CODE_S,Postal Code
+B_FIRST_NAME_S,First Name
+B_LAST_NAME_S,Last Name
+B_M_I_S,Middle Initial
+B_EMAIL_ADDRESS_S,Email Address
+B_HOME_PHONE_NUMBER_S,Home Phone Number
+B_MOBILE_PHONE_NUBER_S,Mobile Phone Number
+B_FAX_NUMBER_S,Fax Number
+B_COMPANY_NAME_S,Company Name
+B_POSITION_S,Job Position
+B_TITLE_L,Title
+B_CONTACT_TYPE_L,Contact Type
+BIRTH_DATE,Date of Birth
+DEATH_DATE,Date of Death
+CONTACT_ID,Contact Identifier
+CLAIMANT_ID,Claimant Identifier
+CLAIM_ID,Claim Identifier
+POLICY_ID,Policy Identifier
