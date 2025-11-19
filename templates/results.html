@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Matching Results - Riskonnect Migration Services</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -31,30 +32,64 @@
         }
 
         h1 {
-            color: #2d3748;
-            margin-bottom: 10px;
+            color: #0066cc;
+            margin-bottom: 30px;
+            text-align: center;
+            font-size: 32px;
         }
 
-        .stats {
+        .stats-row {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
+            grid-template-columns: 350px 1fr;
+            gap: 30px;
             margin: 20px 0;
+            align-items: center;
         }
 
-        .stat-card {
+        @media (max-width: 900px) {
+            .stats-row {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 300px;
+            margin: 0 auto;
+        }
+
+        .stats-text {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
             background: #f7fafc;
-            padding: 20px;
             border-radius: 8px;
-            border-left: 4px solid #0066cc;
         }
 
-        .stat-card.high { border-left-color: #48bb78; }
-        .stat-card.medium { border-left-color: #ed8936; }
-        .stat-card.low { border-left-color: #f56565; }
+        .stat-color {
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+        }
+
+        .stat-color.green { background: #48bb78; }
+        .stat-color.orange { background: #ed8936; }
+        .stat-color.blue { background: #0066cc; }
+
+        .stat-details {
+            flex: 1;
+        }
 
         .stat-value {
-            font-size: 32px;
+            font-size: 28px;
             font-weight: 700;
             color: #2d3748;
         }
@@ -62,13 +97,14 @@
         .stat-label {
             color: #718096;
             font-size: 14px;
-            margin-top: 5px;
+            margin-top: 2px;
         }
 
         .actions {
             display: flex;
             gap: 10px;
             margin-top: 20px;
+            justify-content: center;
         }
 
         .btn {
@@ -97,6 +133,13 @@
         .btn:hover {
             transform: translateY(-2px);
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .info-text {
+            text-align: center;
+            color: #718096;
+            font-size: 14px;
+            margin-top: 20px;
         }
 
         .results-container {
@@ -190,28 +233,39 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1 style="color: #0066cc;">Matching Results</h1>
+            <h1>Matching Results</h1>
 
-            <div class="stats">
-                <div class="stat-card">
-                    <div class="stat-value">{{ total_matches }}</div>
-                    <div class="stat-label">Total Matches Found</div>
+            <div class="stats-row">
+                <div class="chart-container">
+                    <canvas id="confidenceChart"></canvas>
                 </div>
-                <div class="stat-card high">
-                    <div class="stat-value">{{ high_conf }}</div>
-                    <div class="stat-label">High Confidence (≥80%)</div>
-                </div>
-                <div class="stat-card medium">
-                    <div class="stat-value">{{ med_conf }}</div>
-                    <div class="stat-label">Medium Confidence (60-79%)</div>
-                </div>
-                <div class="stat-card low">
-                    <div class="stat-value">{{ low_conf }}</div>
-                    <div class="stat-label">Low Confidence (<60%)</div>
+
+                <div class="stats-text">
+                    <div class="stat-item">
+                        <div class="stat-color green"></div>
+                        <div class="stat-details">
+                            <div class="stat-value">{{ high_conf }}</div>
+                            <div class="stat-label">High Confidence (≥80%)</div>
+                        </div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-color orange"></div>
+                        <div class="stat-details">
+                            <div class="stat-value">{{ med_conf }}</div>
+                            <div class="stat-label">Medium Confidence (60-79%)</div>
+                        </div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-color blue"></div>
+                        <div class="stat-details">
+                            <div class="stat-value">{{ low_conf }}</div>
+                            <div class="stat-label">Low Confidence (<60%)</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <div style="color: #718096; font-size: 14px; margin-top: 10px;">
+            <div class="info-text">
                 Processed {{ ventiv_count }} Ventiv fields against {{ salesforce_count }} Salesforce fields
                 (Threshold: {{ threshold }}%)
                 {% if use_embeddings %}
@@ -298,5 +352,46 @@
             {% endif %}
         </div>
     </div>
+
+    <script>
+        // Create pie chart
+        const ctx = document.getElementById('confidenceChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'pie',
+            data: {
+                labels: ['High Confidence', 'Medium Confidence', 'Low Confidence'],
+                datasets: [{
+                    data: [{{ high_conf }}, {{ med_conf }}, {{ low_conf }}],
+                    backgroundColor: [
+                        '#48bb78',  // Green
+                        '#ed8936',  // Orange
+                        '#0066cc'   // Blue
+                    ],
+                    borderWidth: 2,
+                    borderColor: '#ffffff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label || '';
+                                const value = context.parsed || 0;
+                                const total = {{ total_matches }};
+                                const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                                return label + ': ' + value + ' (' + percentage + '%)';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    </script>
 </body>
 </html>
