@@ -43,3 +43,7 @@ output/*.json
 
 # Keep output directory
 !output/.gitkeep
+
+# Uploads (temporary files)
+uploads/*
+!uploads/.gitkeep

@@ -8,6 +8,8 @@ This tool helps with system integration by automatically matching field names fr
 
 ## Features
 
+- **🌐 Web Interface**: Easy-to-use web UI for uploading files and viewing results
+- **💻 Command Line Interface**: Full-featured CLI for automation and scripting
 - **Fuzzy String Matching**: Uses advanced fuzzy matching algorithms to find similar field names
 - **Label-Aware Matching**: Supports matching against both Salesforce API names AND field labels for significantly improved accuracy
 - **Smart Field Normalization**: Handles camelCase, underscores, prefixes/suffixes, and common abbreviations
@@ -27,7 +29,30 @@ pip install -r requirements.txt
 
 ## Usage
 
-### Basic Usage
+### Web Interface (Recommended)
+
+The easiest way to use FuzzyMatcher is through the web interface:
+
+1. Start the web server:
+```bash
+python app.py
+```
+
+2. Open your browser to: **http://localhost:5000**
+
+3. Upload your files:
+   - **Ventiv IRM Fields**: .txt file with one field per line
+   - **Salesforce Fields**: .txt or .csv file (CSV with labels recommended)
+
+4. Adjust the confidence threshold (default: 70%)
+
+5. Click "Match Fields" and view results
+
+6. Download results as CSV
+
+### Command Line Interface
+
+For automation or scripting, use the CLI:
 
 ```bash
 python matcher.py --ventiv data/ventiv_fields.txt --salesforce data/salesforce_fields.txt
