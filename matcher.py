@@ -8,22 +8,36 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 from rapidfuzz import fuzz, process
 import pandas as pd
+import numpy as np
 
 
 class FieldMatcher:
     """Handles fuzzy matching between two sets of field names"""
 
-    def __init__(self, threshold: int = 80):
+    def __init__(self, threshold: int = 80, use_embeddings: bool = False,
+                 fuzzy_weight: float = 0.5, semantic_weight: float = 0.5):
         """
         Initialize the FieldMatcher
 
         Args:
             threshold: Minimum confidence score (0-100) for a match
+            use_embeddings: Whether to use semantic embeddings for matching
+            fuzzy_weight: Weight for fuzzy matching score (0-1)
+            semantic_weight: Weight for semantic similarity score (0-1)
         """
         self.threshold = threshold
+        self.use_embeddings = use_embeddings
+        self.fuzzy_weight = fuzzy_weight
+        self.semantic_weight = semantic_weight
+        self.model = None
+        self.embedding_cache = {}
+
+        # Try to load embedding model if requested
+        if use_embeddings:
+            self._load_embedding_model()
 
         # Common field name abbreviations and expansions
         self.abbreviations = {
@@ -49,6 +63,87 @@ class FieldMatcher:
             'lt': 'litigation',
             'ref': 'reference'
         }
+
+    def _load_embedding_model(self):
+        """Load the sentence transformer model for semantic matching"""
+        try:
+            from sentence_transformers import SentenceTransformer
+            print("Loading semantic embedding model (this may take a moment on first run)...")
+            # Use a small, fast model optimized for semantic similarity
+            self.model = SentenceTransformer('all-MiniLM-L6-v2')
+            print("✓ Embedding model loaded successfully")
+        except ImportError:
+            print("Warning: sentence-transformers not installed. Falling back to fuzzy matching only.")
+            print("Install with: pip install sentence-transformers")
+            self.use_embeddings = False
+        except Exception as e:
+            print(f"Warning: Could not load embedding model: {e}")
+            print("Falling back to fuzzy matching only.")
+            self.use_embeddings = False
+
+    def get_embedding(self, text: str) -> Optional[np.ndarray]:
+        """
+        Get embedding vector for a text string (with caching)
+
+        Args:
+            text: Text to embed
+
+        Returns:
+            Embedding vector or None if model not available
+        """
+        if not self.model:
+            return None
+
+        # Check cache first
+        if text in self.embedding_cache:
+            return self.embedding_cache[text]
+
+        # Compute and cache embedding
+        embedding = self.model.encode(text, convert_to_numpy=True)
+        self.embedding_cache[text] = embedding
+        return embedding
+
+    def cosine_similarity(self, vec1: np.ndarray, vec2: np.ndarray) -> float:
+        """
+        Calculate cosine similarity between two vectors
+
+        Args:
+            vec1: First vector
+            vec2: Second vector
+
+        Returns:
+            Cosine similarity score (0-1)
+        """
+        from sklearn.metrics.pairwise import cosine_similarity
+        return cosine_similarity([vec1], [vec2])[0][0]
+
+    def calculate_semantic_similarity(self, source: str, target: str) -> float:
+        """
+        Calculate semantic similarity using embeddings
+
+        Args:
+            source: Source field name
+            target: Target field name
+
+        Returns:
+            Semantic similarity score (0-100)
+        """
+        if not self.use_embeddings or not self.model:
+            return 0.0
+
+        # Get embeddings for both normalized field names
+        source_norm = self.normalize_field_name(source)
+        target_norm = self.normalize_field_name(target)
+
+        source_emb = self.get_embedding(source_norm)
+        target_emb = self.get_embedding(target_norm)
+
+        if source_emb is None or target_emb is None:
+            return 0.0
+
+        # Compute cosine similarity and convert to 0-100 scale
+        similarity = self.cosine_similarity(source_emb, target_emb)
+        return round(similarity * 100, 2)
 
     def load_fields(self, file_path: str) -> List[str]:
         """
@@ -177,16 +272,16 @@ class FieldMatcher:
 
         return normalized
 
-    def calculate_confidence(self, source: str, target: str) -> float:
+    def calculate_confidence(self, source: str, target: str) -> Dict[str, float]:
         """
-        Calculate confidence score using multiple fuzzy matching algorithms
+        Calculate confidence score using fuzzy matching and optionally semantic similarity
 
         Args:
             source: Source field name
             target: Target field name
 
         Returns:
-            Confidence score (0-100)
+            Dictionary with fuzzy_score, semantic_score, and combined confidence
         """
         # Normalize field names for better matching
         source_norm = self.normalize_field_name(source)
@@ -203,7 +298,7 @@ class FieldMatcher:
         orig_token_sort = fuzz.token_sort_ratio(source.lower(), target.lower())
 
         # Weighted average favoring normalized comparisons
-        confidence = (
+        fuzzy_score = (
             ratio_score * 0.25 +
             partial_score * 0.15 +
             token_sort_score * 0.25 +
@@ -212,7 +307,25 @@ class FieldMatcher:
             orig_token_sort * 0.05
         )
 
-        return round(confidence, 2)
+        # Calculate semantic similarity if embeddings are enabled
+        semantic_score = 0.0
+        if self.use_embeddings:
+            semantic_score = self.calculate_semantic_similarity(source, target)
+
+        # Combine scores based on weights
+        if self.use_embeddings and semantic_score > 0:
+            combined_confidence = (
+                fuzzy_score * self.fuzzy_weight +
+                semantic_score * self.semantic_weight
+            )
+        else:
+            combined_confidence = fuzzy_score
+
+        return {
+            'fuzzy_score': round(fuzzy_score, 2),
+            'semantic_score': round(semantic_score, 2),
+            'confidence': round(combined_confidence, 2)
+        }
 
     def get_confidence_status(self, confidence: float) -> str:
         """
@@ -262,13 +375,15 @@ class FieldMatcher:
                 sf_field, score, _ = best_match
 
                 # Calculate more detailed confidence score
-                confidence = self.calculate_confidence(ventiv_field, sf_field)
+                scores = self.calculate_confidence(ventiv_field, sf_field)
 
                 match_data = {
                     'ventiv_field': ventiv_field,
                     'salesforce_field': sf_field,
-                    'confidence': confidence,
-                    'status': self.get_confidence_status(confidence)
+                    'confidence': scores['confidence'],
+                    'fuzzy_score': scores['fuzzy_score'],
+                    'semantic_score': scores['semantic_score'],
+                    'status': self.get_confidence_status(scores['confidence'])
                 }
 
                 matches.append(match_data)
@@ -298,8 +413,8 @@ class FieldMatcher:
             return fuzz.token_sort_ratio(query_norm, choice_norm, **kwargs)
 
         for ventiv_field in ventiv_fields_dict.keys():
-            best_api_confidence = 0
-            best_label_confidence = 0
+            best_api_scores = None
+            best_label_scores = None
             best_api_match = None
             best_label_match = None
 
@@ -313,7 +428,7 @@ class FieldMatcher:
 
             if api_match:
                 best_api_match = api_match[0]
-                best_api_confidence = self.calculate_confidence(ventiv_field, best_api_match)
+                best_api_scores = self.calculate_confidence(ventiv_field, best_api_match)
 
             # Match against labels
             labels_to_api = {label: api for api, label in salesforce_fields_dict.items()}
@@ -328,28 +443,33 @@ class FieldMatcher:
             if label_match:
                 best_label = label_match[0]
                 best_label_match = labels_to_api[best_label]
-                best_label_confidence = self.calculate_confidence(ventiv_field, best_label)
+                best_label_scores = self.calculate_confidence(ventiv_field, best_label)
 
-            # Choose the best match between API name and label
-            if best_api_confidence >= best_label_confidence:
+            # Choose the best match between API name and label based on confidence
+            api_conf = best_api_scores['confidence'] if best_api_scores else 0
+            label_conf = best_label_scores['confidence'] if best_label_scores else 0
+
+            if api_conf >= label_conf:
                 final_match = best_api_match
-                final_confidence = best_api_confidence
+                final_scores = best_api_scores
                 match_type = 'API Name'
                 matched_value = best_api_match
             else:
                 final_match = best_label_match
-                final_confidence = best_label_confidence
+                final_scores = best_label_scores
                 match_type = 'Label'
                 matched_value = salesforce_fields_dict[best_label_match]
 
-            if final_match:
+            if final_match and final_scores:
                 match_data = {
                     'ventiv_field': ventiv_field,
                     'ventiv_label': ventiv_fields_dict[ventiv_field],
                     'salesforce_field': final_match,
                     'salesforce_label': salesforce_fields_dict[final_match],
-                    'confidence': final_confidence,
-                    'status': self.get_confidence_status(final_confidence),
+                    'confidence': final_scores['confidence'],
+                    'fuzzy_score': final_scores['fuzzy_score'],
+                    'semantic_score': final_scores['semantic_score'],
+                    'status': self.get_confidence_status(final_scores['confidence']),
                     'matched_on': match_type,
                     'matched_value': matched_value
                 }
@@ -387,41 +507,56 @@ class FieldMatcher:
 
         df = pd.DataFrame(matches)
 
-        # Rename columns based on what's available
-        if 'salesforce_label' in df.columns and 'ventiv_label' in df.columns:
-            # Full format with both Ventiv and Salesforce labels
-            column_map = {
-                'ventiv_field': 'Ventiv_Field',
-                'ventiv_label': 'Ventiv_Label',
-                'salesforce_field': 'Salesforce_Field',
-                'salesforce_label': 'Salesforce_Label',
-                'confidence': 'Confidence_Score',
-                'status': 'Status',
-                'matched_on': 'Matched_On',
-                'matched_value': 'Matched_Value'
-            }
-            df = df.rename(columns=column_map)
-        elif 'salesforce_label' in df.columns:
-            # Salesforce labels only
-            column_map = {
-                'ventiv_field': 'Ventiv_Field',
-                'salesforce_field': 'Salesforce_API_Name',
-                'salesforce_label': 'Salesforce_Label',
-                'confidence': 'Confidence_Score',
-                'status': 'Status',
-                'matched_on': 'Matched_On',
-                'matched_value': 'Matched_Value'
-            }
-            df = df.rename(columns=column_map)
-        else:
-            # Simple format without labels
-            column_map = {
-                'ventiv_field': 'Ventiv_Field',
-                'salesforce_field': 'Salesforce_Field',
-                'confidence': 'Confidence_Score',
-                'status': 'Status'
-            }
-            df = df.rename(columns=column_map)
+        # Base column mappings
+        base_map = {
+            'ventiv_field': 'Ventiv_Field',
+            'salesforce_field': 'Salesforce_Field',
+            'confidence': 'Combined_Confidence',
+            'status': 'Status'
+        }
+
+        # Add optional columns if they exist
+        if 'ventiv_label' in df.columns:
+            base_map['ventiv_label'] = 'Ventiv_Label'
+        if 'salesforce_label' in df.columns:
+            base_map['salesforce_label'] = 'Salesforce_Label'
+        if 'fuzzy_score' in df.columns:
+            base_map['fuzzy_score'] = 'Fuzzy_Score'
+        if 'semantic_score' in df.columns:
+            base_map['semantic_score'] = 'Semantic_Score'
+        if 'matched_on' in df.columns:
+            base_map['matched_on'] = 'Matched_On'
+        if 'matched_value' in df.columns:
+            base_map['matched_value'] = 'Matched_Value'
+
+        df = df.rename(columns=base_map)
+
+        # Reorder columns for better readability
+        desired_order = []
+        if 'Ventiv_Field' in df.columns:
+            desired_order.append('Ventiv_Field')
+        if 'Ventiv_Label' in df.columns:
+            desired_order.append('Ventiv_Label')
+        if 'Salesforce_Field' in df.columns:
+            desired_order.append('Salesforce_Field')
+        if 'Salesforce_Label' in df.columns:
+            desired_order.append('Salesforce_Label')
+        if 'Fuzzy_Score' in df.columns:
+            desired_order.append('Fuzzy_Score')
+        if 'Semantic_Score' in df.columns:
+            desired_order.append('Semantic_Score')
+        if 'Combined_Confidence' in df.columns:
+            desired_order.append('Combined_Confidence')
+        if 'Status' in df.columns:
+            desired_order.append('Status')
+        if 'Matched_On' in df.columns:
+            desired_order.append('Matched_On')
+        if 'Matched_Value' in df.columns:
+            desired_order.append('Matched_Value')
+
+        # Reorder columns
+        existing_cols = [col for col in desired_order if col in df.columns]
+        df = df[existing_cols]
 
         df.to_csv(output_path, index=False)
         print(f"Results saved to: {output_path}")
@@ -546,6 +681,26 @@ def main():
         help='Show all matches, even those below threshold'
     )
 
+    parser.add_argument(
+        '--use-embeddings',
+        action='store_true',
+        help='Use semantic embeddings for improved matching (requires sentence-transformers)'
+    )
+
+    parser.add_argument(
+        '--fuzzy-weight',
+        type=float,
+        default=0.5,
+        help='Weight for fuzzy matching score (0-1, default: 0.5)'
+    )
+
+    parser.add_argument(
+        '--semantic-weight',
+        type=float,
+        default=0.5,
+        help='Weight for semantic similarity score (0-1, default: 0.5)'
+    )
+
     args = parser.parse_args()
 
     # Validate threshold
@@ -553,8 +708,21 @@ def main():
         print("Error: Threshold must be between 0 and 100")
         sys.exit(1)
 
+    # Validate weights
+    if not 0 <= args.fuzzy_weight <= 1:
+        print("Error: Fuzzy weight must be between 0 and 1")
+        sys.exit(1)
+    if not 0 <= args.semantic_weight <= 1:
+        print("Error: Semantic weight must be between 0 and 1")
+        sys.exit(1)
+
     # Initialize matcher
-    matcher = FieldMatcher(threshold=args.threshold)
+    matcher = FieldMatcher(
+        threshold=args.threshold,
+        use_embeddings=args.use_embeddings,
+        fuzzy_weight=args.fuzzy_weight,
+        semantic_weight=args.semantic_weight
+    )
 
     # Load field lists
     print(f"Loading Ventiv IRM fields from: {args.ventiv}")
