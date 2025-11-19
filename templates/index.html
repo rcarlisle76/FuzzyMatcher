@@ -223,20 +223,20 @@
 <body>
     <div class="container">
         <h1>Riskonnect Migration Services Data Mapping Tool</h1>
-        <p class="subtitle">Match Ventiv IRM fields to Salesforce API fields</p>
+        <p class="subtitle">Match source object fields to Riskonnect destination object fields</p>
 
         <div class="info-box">
             <strong>File Format:</strong>
             <ul style="margin-top: 8px; margin-left: 20px;">
-                <li>Ventiv: .txt file with one field per line or .csv (API_Name,Label)</li>
-                <li>Salesforce: .txt or .csv (API_Name,Label for better results)</li>
+                <li>Source: .txt file with one field per line or .csv (API_Name,Label)</li>
+                <li>Destination: .txt or .csv (API_Name,Label for better results)</li>
             </ul>
         </div>
 
         <form id="uploadForm" method="POST" action="/match" enctype="multipart/form-data">
             <div class="file-inputs-row">
                 <div class="form-group">
-                    <label for="ventiv_file">Ventiv IRM Fields</label>
+                    <label for="ventiv_file">Source Object Labels and Fields</label>
                     <div class="file-input-wrapper">
                         <input type="file" id="ventiv_file" name="ventiv_file" accept=".txt,.csv" required>
                         <div class="file-label">
@@ -252,7 +252,7 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="salesforce_file">Salesforce Fields</label>
+                    <label for="salesforce_file">Riskonnect Destination Object Labels and Fields</label>
                     <div class="file-input-wrapper">
                         <input type="file" id="salesforce_file" name="salesforce_file" accept=".txt,.csv" required>
                         <div class="file-label">
