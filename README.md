@@ -9,10 +9,13 @@ This tool helps with system integration by automatically matching field names fr
 ## Features
 
 - **Fuzzy String Matching**: Uses advanced fuzzy matching algorithms to find similar field names
+- **Label-Aware Matching**: Supports matching against both Salesforce API names AND field labels for significantly improved accuracy
+- **Smart Field Normalization**: Handles camelCase, underscores, prefixes/suffixes, and common abbreviations
 - **Configurable Threshold**: Adjust matching sensitivity based on your needs
 - **Multiple Output Formats**: Export results as CSV or JSON
 - **Confidence Scoring**: Each match includes a confidence score (0-100)
 - **Manual Review Support**: Easily identify low-confidence matches for manual verification
+- **Match Transparency**: Shows whether each match was found via API name or label
 
 ## Installation
 
@@ -45,31 +48,90 @@ python matcher.py --ventiv data/ventiv_fields.txt --salesforce data/salesforce_f
 
 ## Input Format
 
-Field lists should be provided as text files with one field name per line:
+### Ventiv Fields (Text File)
+
+Provide Ventiv IRM fields as a text file with one field name per line:
 
 **ventiv_fields.txt**:
 ```
-ClaimNumber
-PolicyHolderName
-DateOfLoss
-ClaimAmount
+B_FIRST_NAME_S
+B_LAST_NAME_S
+B_EMAIL_ADDRESS_S
+BIRTH_DATE
+CONTACT_ID
 ```
 
-**salesforce_fields.txt**:
+### Salesforce Fields (Text or CSV)
+
+You have two options for Salesforce fields:
+
+**Option 1: Simple Text File (API names only)**
 ```
-Claim_Number__c
-Policy_Holder_Name__c
-Loss_Date__c
-Claim_Amount__c
+FirstName
+LastName
+Email
+Birthdate
+JigsawContactId
+```
+
+**Option 2: CSV with Labels (RECOMMENDED for best results)**
+
+For significantly improved matching accuracy, provide a CSV file with both API names and field labels:
+
+**salesforce_fields.csv**:
+```csv
+FirstName,First Name
+LastName,Last Name
+Email,Email Address
+Birthdate,Birth Date
+JigsawContactId,Contact ID
+Middle_Initial__c,Middle Initial
+HomePhone,Home Phone Number
+Address_1__c,Street Address Line 1
+```
+
+The tool automatically detects the format and uses both API names and labels when available, resulting in 95-99% confidence matches for most fields.
+
+### How to Export Salesforce Field Labels
+
+**Option 1: Salesforce Workbench**
+1. Go to https://workbench.developerforce.com
+2. Login to your org
+3. Navigate to: Info → Standard & Custom Objects → Contact (or your object)
+4. Click on "Fields"
+5. Export to CSV with both API Name and Label columns
+
+**Option 2: Salesforce Setup UI**
+1. Setup → Object Manager → Contact
+2. Click "Fields & Relationships"
+3. Export or copy the API Name and Label columns to CSV
+
+**Option 3: SOQL Query (Developer Console)**
+```sql
+SELECT QualifiedApiName, Label
+FROM FieldDefinition
+WHERE EntityDefinition.QualifiedApiName = 'Contact'
+ORDER BY Label
 ```
 
 ## Output Format
 
-### CSV Output
+### CSV Output (with labels)
+
+When using CSV input with labels, the output includes comprehensive matching information:
+
+```csv
+Ventiv_Field,Salesforce_API_Name,Salesforce_Label,Confidence_Score,Status,Matched_On,Matched_Value
+BIRTH_DATE,Birthdate,Birth Date,99.0,High Confidence,Label,Birth Date
+B_FIRST_NAME_S,FirstName,First Name,97.83,High Confidence,API Name,FirstName
+B_EMAIL_ADDRESS_S,Email,Email Address,96.33,High Confidence,Label,Email Address
+```
+
+### CSV Output (without labels)
 ```csv
 Ventiv_Field,Salesforce_Field,Confidence_Score,Status
-ClaimNumber,Claim_Number__c,95,High Confidence
-PolicyHolderName,Policy_Holder_Name__c,92,High Confidence
+BIRTH_DATE,Birthdate,93.86,High Confidence
+B_FIRST_NAME_S,FirstName,97.83,High Confidence
 ```
 
 ### JSON Output

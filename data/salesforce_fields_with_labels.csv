@@ -1,0 +1,39 @@
+FirstName,First Name
+LastName,Last Name
+Middle_Initial__c,Middle Initial
+Birthdate,Birth Date
+Email,Email Address
+HomePhone,Home Phone Number
+MobilePhone,Mobile Phone Number
+Fax,Fax Number
+Address_1__c,Street Address Line 1
+Address_2__c,Street Address Line 2
+City__c,City
+State__c,State
+Country__c,Country
+Zip_Code__c,Postal Code
+Contact_Type__c,Contact Type
+Position__c,Position/Title
+Title,Salutation/Title
+Name,Full Name
+JigsawContactId,Contact ID
+AccountId,Account ID
+Id,Record ID
+Tax_Id__c,Tax Identification Number
+SSN__c,Social Security Number
+NPI__c,National Provider Identifier
+Employee_ID__c,Employee ID Number
+Employee_Name__c,Employee Full Name
+Employee_Number__c,Employee Number
+Hire_Date__c,Hire Date
+Date_of_Death__c,Date of Death
+OtherPostalCode,Alternate Postal Code
+MailingAddress,Mailing Street Address
+RecordTypeId,Record Type ID
+User__c,Assigned User
+Supervisor_Name__c,Supervisor Name
+Department__c,Department
+Role__c,Job Role
+Salary__c,Annual Salary
+Employment_Status__c,Employment Status
+Termination_Date__c,Termination Date
