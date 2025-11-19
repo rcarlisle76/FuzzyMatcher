@@ -25,6 +25,31 @@ class FieldMatcher:
         """
         self.threshold = threshold
 
+        # Common field name abbreviations and expansions
+        self.abbreviations = {
+            'addr': 'address',
+            'num': 'number',
+            'nbr': 'number',
+            'desc': 'description',
+            'amt': 'amount',
+            'mgr': 'manager',
+            'dept': 'department',
+            'emp': 'employee',
+            'id': 'identifier',
+            'fax': 'fax',
+            'tel': 'telephone',
+            'phn': 'phone',
+            'ph': 'phone',
+            'dob': 'date of birth',
+            'ssn': 'social security number',
+            'npi': 'national provider identifier',
+            'med': 'medical',
+            'm': 'middle',
+            'i': 'initial',
+            'lt': 'litigation',
+            'ref': 'reference'
+        }
+
     def load_fields(self, file_path: str) -> List[str]:
         """
         Load field names from a text file
@@ -46,6 +71,67 @@ class FieldMatcher:
             print(f"Error reading file {file_path}: {e}")
             sys.exit(1)
 
+    def normalize_field_name(self, field_name: str) -> str:
+        """
+        Normalize a field name for better matching by:
+        - Splitting camelCase
+        - Removing common prefixes and suffixes
+        - Expanding abbreviations
+        - Standardizing separators
+
+        Args:
+            field_name: Original field name
+
+        Returns:
+            Normalized field name
+        """
+        import re
+
+        # First, split camelCase by inserting spaces before capital letters
+        # e.g., "FirstName" -> "First Name"
+        field_with_spaces = re.sub(r'([a-z])([A-Z])', r'\1 \2', field_name)
+
+        # Convert to lowercase
+        normalized = field_with_spaces.lower()
+
+        # Remove common Ventiv prefixes (B_, etc.)
+        if normalized.startswith('b_') or normalized.startswith('b '):
+            normalized = normalized[2:]
+
+        # Remove common suffixes (_S, _L, _N, etc.)
+        for suffix in [' s', ' l', ' n', ' c', ' d', ' t', '_s', '_l', '_n', '_c', '_d', '_t']:
+            if normalized.endswith(suffix):
+                normalized = normalized[:-2]
+                break
+
+        # Remove Salesforce custom field suffix (__c)
+        if '__c' in normalized:
+            normalized = normalized.replace('__c', '')
+
+        # Replace underscores with spaces
+        normalized = normalized.replace('_', ' ')
+
+        # Split into tokens and process each
+        tokens = normalized.split()
+        expanded_tokens = []
+
+        for token in tokens:
+            # Strip any remaining special characters
+            token = token.strip()
+            if not token:
+                continue
+
+            # Expand abbreviations
+            if token in self.abbreviations:
+                expanded_tokens.append(self.abbreviations[token])
+            else:
+                expanded_tokens.append(token)
+
+        # Join tokens back with single space
+        normalized = ' '.join(expanded_tokens).strip()
+
+        return normalized
+
     def calculate_confidence(self, source: str, target: str) -> float:
         """
         Calculate confidence score using multiple fuzzy matching algorithms
@@ -57,18 +143,28 @@ class FieldMatcher:
         Returns:
             Confidence score (0-100)
         """
-        # Use multiple matching algorithms and average them
-        ratio_score = fuzz.ratio(source.lower(), target.lower())
-        partial_score = fuzz.partial_ratio(source.lower(), target.lower())
-        token_sort_score = fuzz.token_sort_ratio(source.lower(), target.lower())
-        token_set_score = fuzz.token_set_ratio(source.lower(), target.lower())
+        # Normalize field names for better matching
+        source_norm = self.normalize_field_name(source)
+        target_norm = self.normalize_field_name(target)
 
-        # Weighted average (token_sort and token_set are more lenient with word order)
+        # Use multiple matching algorithms on normalized names
+        ratio_score = fuzz.ratio(source_norm, target_norm)
+        partial_score = fuzz.partial_ratio(source_norm, target_norm)
+        token_sort_score = fuzz.token_sort_ratio(source_norm, target_norm)
+        token_set_score = fuzz.token_set_ratio(source_norm, target_norm)
+
+        # Also compare original names for cases where normalization might hurt
+        orig_ratio = fuzz.ratio(source.lower(), target.lower())
+        orig_token_sort = fuzz.token_sort_ratio(source.lower(), target.lower())
+
+        # Weighted average favoring normalized comparisons
         confidence = (
-            ratio_score * 0.3 +
-            partial_score * 0.2 +
+            ratio_score * 0.25 +
+            partial_score * 0.15 +
             token_sort_score * 0.25 +
-            token_set_score * 0.25
+            token_set_score * 0.25 +
+            orig_ratio * 0.05 +
+            orig_token_sort * 0.05
         )
 
         return round(confidence, 2)
@@ -103,12 +199,18 @@ class FieldMatcher:
         """
         matches = []
 
+        # Create a custom scorer that uses normalized field names
+        def normalized_scorer(query, choice, **kwargs):
+            query_norm = self.normalize_field_name(query)
+            choice_norm = self.normalize_field_name(choice)
+            return fuzz.token_sort_ratio(query_norm, choice_norm, **kwargs)
+
         for ventiv_field in ventiv_fields:
-            # Find the best match using rapidfuzz
+            # Find the best match using rapidfuzz with normalized scorer
             best_match = process.extractOne(
                 ventiv_field,
                 salesforce_fields,
-                scorer=fuzz.token_sort_ratio
+                scorer=normalized_scorer
             )
 
             if best_match:
