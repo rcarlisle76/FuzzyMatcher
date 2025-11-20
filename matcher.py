@@ -435,22 +435,22 @@ class FieldMatcher:
                 # Incompatible types - heavy penalty
                 type_adjustment = -50.0
 
-        # Apply the penalties and bonuses
-        fuzzy_score = max(0, fuzzy_score - number_penalty + type_adjustment)
+        # Apply the penalties and bonuses (capped at 100)
+        fuzzy_score = min(100.0, max(0, fuzzy_score - number_penalty + type_adjustment))
 
         # Calculate semantic similarity if embeddings are enabled
         semantic_score = 0.0
         if self.use_embeddings:
             semantic_score = self.calculate_semantic_similarity(source, target)
-            # Also apply number penalty and type adjustment to semantic score
-            semantic_score = max(0, semantic_score - number_penalty + type_adjustment)
+            # Also apply number penalty and type adjustment to semantic score (capped at 100)
+            semantic_score = min(100.0, max(0, semantic_score - number_penalty + type_adjustment))
 
-        # Combine scores based on weights
+        # Combine scores based on weights (capped at 100)
         if self.use_embeddings and semantic_score > 0:
-            combined_confidence = (
+            combined_confidence = min(100.0, (
                 fuzzy_score * self.fuzzy_weight +
                 semantic_score * self.semantic_weight
-            )
+            ))
         else:
             combined_confidence = fuzzy_score
 
