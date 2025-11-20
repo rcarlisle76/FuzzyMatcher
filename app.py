@@ -72,10 +72,15 @@ def match_fields():
         ventiv_fields_dict = matcher.load_fields_with_labels(ventiv_path)
         salesforce_fields_dict = matcher.load_fields_with_labels(salesforce_path)
 
-        # Determine if we have labels
+        # Determine if we have labels and types
         has_ventiv_labels = any(api != info['label'] for api, info in ventiv_fields_dict.items())
         has_sf_labels = any(api != info['label'] for api, info in salesforce_fields_dict.items())
         has_labels = has_ventiv_labels or has_sf_labels
+
+        # Check if we have type information
+        has_ventiv_types = any(info.get('type') is not None for info in ventiv_fields_dict.values())
+        has_sf_types = any(info.get('type') is not None for info in salesforce_fields_dict.values())
+        has_types = has_ventiv_types or has_sf_types
 
         # Perform matching - always use match_fields_with_labels since it handles the new structure
         matches = matcher.match_fields_with_labels(ventiv_fields_dict, salesforce_fields_dict)
@@ -124,6 +129,9 @@ def match_fields():
                              has_labels=has_labels,
                              has_ventiv_labels=has_ventiv_labels,
                              has_sf_labels=has_sf_labels,
+                             has_types=has_types,
+                             has_ventiv_types=has_ventiv_types,
+                             has_sf_types=has_sf_types,
                              total_matches=total_matches,
                              high_conf=high_conf,
                              med_conf=med_conf,

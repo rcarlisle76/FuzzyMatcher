@@ -297,9 +297,15 @@
                             {% if has_ventiv_labels %}
                             <th>Ventiv Label</th>
                             {% endif %}
+                            {% if has_ventiv_types %}
+                            <th>Ventiv Type</th>
+                            {% endif %}
                             <th>Salesforce Field</th>
                             {% if has_sf_labels %}
                             <th>Salesforce Label</th>
+                            {% endif %}
+                            {% if has_sf_types %}
+                            <th>Salesforce Type</th>
                             {% endif %}
                             {% if has_labels %}
                             <th>Matched On</th>
@@ -316,9 +322,15 @@
                             {% if has_ventiv_labels %}
                             <td><strong>{{ match.ventiv_label }}</strong></td>
                             {% endif %}
+                            {% if has_ventiv_types %}
+                            <td><span style="color: #0066cc; font-size: 12px;">{{ match.ventiv_type if match.ventiv_type else '-' }}</span></td>
+                            {% endif %}
                             <td><code style="background: #f7fafc; padding: 2px 6px; border-radius: 3px; font-size: 13px;">{{ match.salesforce_field }}</code></td>
                             {% if has_sf_labels %}
                             <td><strong>{{ match.salesforce_label }}</strong></td>
+                            {% endif %}
+                            {% if has_sf_types %}
+                            <td><span style="color: #0066cc; font-size: 12px;">{{ match.salesforce_type if match.salesforce_type else '-' }}</span></td>
                             {% endif %}
                             {% if has_labels %}
                             <td><span class="match-type">{{ match.matched_on }}</span></td>
