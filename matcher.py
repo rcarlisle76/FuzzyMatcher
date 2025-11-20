@@ -229,10 +229,50 @@ class FieldMatcher:
             print(f"Error reading file {file_path}: {e}")
             sys.exit(1)
 
+    def _looks_like_api_name(self, text: str) -> bool:
+        """
+        Determine if a string looks more like an API name than a human label
+        API names typically have: underscores, __c suffix, CamelCase, fewer spaces
+        Labels typically have: more spaces, sentence-like text
+
+        Args:
+            text: String to analyze
+
+        Returns:
+            True if it looks like an API name, False if it looks like a label
+        """
+        if not text:
+            return False
+
+        # Strong indicators it's an API name
+        if '__c' in text.lower():  # Salesforce custom field
+            return True
+        if text.endswith('__c'):
+            return True
+        if '_' in text and ' ' not in text:  # snake_case with no spaces
+            return True
+        if text[0].isupper() and text[1:].islower() == False and '_' not in text:  # CamelCase
+            return True
+
+        # Count spaces - labels typically have more spaces
+        space_count = text.count(' ')
+        underscore_count = text.count('_')
+
+        # More underscores than spaces suggests API name
+        if underscore_count > space_count:
+            return True
+
+        # Multiple spaces suggests a label
+        if space_count >= 2:
+            return False
+
+        # If no clear indicator, assume it's a label (conservative choice)
+        return False
+
     def load_fields_with_labels(self, file_path: str) -> Dict[str, Dict[str, str]]:
         """
         Load fields from CSV with API names, labels, and optional types
-        Format: Label,API_Name or Label,API_Name,Type
+        Auto-detects format: Label,API_Name,Type OR API_Name,Label,Type
 
         Args:
             file_path: Path to CSV file
@@ -252,19 +292,50 @@ class FieldMatcher:
                 f.seek(0)
 
                 if ',' in first_line:
-                    # CSV format with labels and optional types
+                    # CSV format - need to detect column order
                     reader = csv.reader(f)
-                    for row in reader:
-                        if row and row[0].strip():
-                            # Column order: Label, API_Name, Type (optional)
-                            label = row[0].strip()
-                            api_name = row[1].strip() if len(row) > 1 and row[1].strip() else label
-                            field_type = row[2].strip() if len(row) > 2 and row[2].strip() else None
+                    rows = list(reader)
 
-                            fields_dict[api_name] = {
-                                'label': label,
-                                'type': field_type
-                            }
+                    if not rows:
+                        return fields_dict
+
+                    # Auto-detect format by analyzing first row
+                    first_row = rows[0]
+                    if len(first_row) < 2:
+                        # Only one column, treat as API name
+                        for row in rows:
+                            if row and row[0].strip():
+                                api_name = row[0].strip()
+                                fields_dict[api_name] = {
+                                    'label': api_name,
+                                    'type': None
+                                }
+                    else:
+                        # Two or more columns - detect order
+                        col0 = first_row[0].strip()
+                        col1 = first_row[1].strip()
+
+                        # Determine if format is "Label,API_Name" or "API_Name,Label"
+                        # by checking if first column looks more like an API name
+                        api_name_first = self._looks_like_api_name(col0) and not self._looks_like_api_name(col1)
+
+                        for row in rows:
+                            if row and row[0].strip():
+                                if api_name_first:
+                                    # Format: API_Name, Label, Type
+                                    api_name = row[0].strip()
+                                    label = row[1].strip() if len(row) > 1 and row[1].strip() else api_name
+                                    field_type = row[2].strip() if len(row) > 2 and row[2].strip() else None
+                                else:
+                                    # Format: Label, API_Name, Type
+                                    label = row[0].strip()
+                                    api_name = row[1].strip() if len(row) > 1 and row[1].strip() else label
+                                    field_type = row[2].strip() if len(row) > 2 and row[2].strip() else None
+
+                                fields_dict[api_name] = {
+                                    'label': label,
+                                    'type': field_type
+                                }
                 else:
                     # Simple text format, use API name as label, no type
                     for line in f:
