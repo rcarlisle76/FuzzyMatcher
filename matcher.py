@@ -64,6 +64,69 @@ class FieldMatcher:
             'ref': 'reference'
         }
 
+        # Field type compatibility rules
+        # Define which types are compatible with each other
+        self.type_groups = {
+            'text': {'text', 'string', 'varchar', 'char', 'email', 'phone', 'url', 'picklist'},
+            'number': {'number', 'integer', 'int', 'decimal', 'float', 'double', 'currency', 'percent'},
+            'date': {'date', 'datetime', 'timestamp', 'time'},
+            'boolean': {'boolean', 'bool', 'checkbox'},
+            'reference': {'reference', 'lookup', 'id', 'foreignkey'}
+        }
+
+    def normalize_type(self, field_type: str) -> str:
+        """
+        Normalize a field type to a standard category
+
+        Args:
+            field_type: Original field type
+
+        Returns:
+            Normalized type category
+        """
+        if not field_type:
+            return 'unknown'
+
+        field_type_lower = field_type.lower().strip()
+
+        # Find which group this type belongs to
+        for group_name, types in self.type_groups.items():
+            if field_type_lower in types:
+                return group_name
+
+        # If no match, return as-is
+        return field_type_lower
+
+    def are_types_compatible(self, type1: str, type2: str) -> tuple:
+        """
+        Check if two field types are compatible
+
+        Args:
+            type1: First field type
+            type2: Second field type
+
+        Returns:
+            Tuple of (compatible: bool, match_quality: str)
+            match_quality can be 'exact', 'compatible', or 'incompatible'
+        """
+        if not type1 or not type2:
+            return (True, 'unknown')  # No penalty if type info missing
+
+        norm_type1 = self.normalize_type(type1)
+        norm_type2 = self.normalize_type(type2)
+
+        # Exact match
+        if norm_type1 == norm_type2:
+            return (True, 'exact')
+
+        # Check if they're in the same compatibility group
+        for group_types in self.type_groups.values():
+            if type1.lower() in group_types and type2.lower() in group_types:
+                return (True, 'compatible')
+
+        # Incompatible types
+        return (False, 'incompatible')
+
     def _load_embedding_model(self):
         """Load the sentence transformer model for semantic matching"""
         try:
@@ -166,16 +229,17 @@ class FieldMatcher:
             print(f"Error reading file {file_path}: {e}")
             sys.exit(1)
 
-    def load_fields_with_labels(self, file_path: str) -> Dict[str, str]:
+    def load_fields_with_labels(self, file_path: str) -> Dict[str, Dict[str, str]]:
         """
-        Load Salesforce fields from CSV with API names and labels
-        Format: API_Name,Label (or just API_Name for simple format)
+        Load fields from CSV with API names, labels, and optional types
+        Format: Label,API_Name or Label,API_Name,Type
 
         Args:
             file_path: Path to CSV file
 
         Returns:
-            Dictionary mapping API names to labels (or API name if no label)
+            Dictionary mapping API names to dict with 'label' and 'type' keys
+            Example: {'Email__c': {'label': 'Email Address', 'type': 'Email'}}
         """
         import csv
 
@@ -188,19 +252,28 @@ class FieldMatcher:
                 f.seek(0)
 
                 if ',' in first_line:
-                    # CSV format with labels
+                    # CSV format with labels and optional types
                     reader = csv.reader(f)
                     for row in reader:
                         if row and row[0].strip():
-                            api_name = row[0].strip()
-                            label = row[1].strip() if len(row) > 1 and row[1].strip() else api_name
-                            fields_dict[api_name] = label
+                            # Column order: Label, API_Name, Type (optional)
+                            label = row[0].strip()
+                            api_name = row[1].strip() if len(row) > 1 and row[1].strip() else label
+                            field_type = row[2].strip() if len(row) > 2 and row[2].strip() else None
+
+                            fields_dict[api_name] = {
+                                'label': label,
+                                'type': field_type
+                            }
                 else:
-                    # Simple text format, use API name as label
+                    # Simple text format, use API name as label, no type
                     for line in f:
                         line = line.strip()
                         if line:
-                            fields_dict[line] = line
+                            fields_dict[line] = {
+                                'label': line,
+                                'type': None
+                            }
 
             return fields_dict
 
@@ -292,14 +365,17 @@ class FieldMatcher:
 
         return normalized
 
-    def calculate_confidence(self, source: str, target: str) -> Dict[str, float]:
+    def calculate_confidence(self, source: str, target: str, source_type: str = None, target_type: str = None) -> Dict[str, float]:
         """
         Calculate confidence score using fuzzy matching and optionally semantic similarity
         Applies penalties for number mismatches to prevent matching Address1 to Address3
+        Applies penalties/bonuses based on field type compatibility
 
         Args:
             source: Source field name
             target: Target field name
+            source_type: Optional field type for source
+            target_type: Optional field type for target
 
         Returns:
             Dictionary with fuzzy_score, semantic_score, and combined confidence
@@ -344,15 +420,30 @@ class FieldMatcher:
             # Only one has numbers - moderate penalty
             number_penalty = 10.0  # Reduce score by 10 points
 
-        # Apply the penalty
-        fuzzy_score = max(0, fuzzy_score - number_penalty)
+        # Apply type matching bonus/penalty
+        type_adjustment = 0.0
+        if source_type and target_type:
+            compatible, match_quality = self.are_types_compatible(source_type, target_type)
+
+            if match_quality == 'exact':
+                # Same type - boost confidence
+                type_adjustment = 10.0
+            elif match_quality == 'compatible':
+                # Compatible types - small boost
+                type_adjustment = 5.0
+            elif match_quality == 'incompatible':
+                # Incompatible types - heavy penalty
+                type_adjustment = -50.0
+
+        # Apply the penalties and bonuses
+        fuzzy_score = max(0, fuzzy_score - number_penalty + type_adjustment)
 
         # Calculate semantic similarity if embeddings are enabled
         semantic_score = 0.0
         if self.use_embeddings:
             semantic_score = self.calculate_semantic_similarity(source, target)
-            # Also apply number penalty to semantic score
-            semantic_score = max(0, semantic_score - number_penalty)
+            # Also apply number penalty and type adjustment to semantic score
+            semantic_score = max(0, semantic_score - number_penalty + type_adjustment)
 
         # Combine scores based on weights
         if self.use_embeddings and semantic_score > 0:
@@ -450,14 +541,14 @@ class FieldMatcher:
 
         return matches
 
-    def match_fields_with_labels(self, ventiv_fields_dict: Dict[str, str], salesforce_fields_dict: Dict[str, str]) -> List[Dict]:
+    def match_fields_with_labels(self, ventiv_fields_dict: Dict[str, Dict[str, str]], salesforce_fields_dict: Dict[str, Dict[str, str]]) -> List[Dict]:
         """
-        Match Ventiv fields to Salesforce fields using both API names and labels
+        Match Ventiv fields to Salesforce fields using both API names, labels, and types
         Uses Hungarian algorithm for optimal one-to-one assignment
 
         Args:
-            ventiv_fields_dict: Dictionary mapping Ventiv API names to labels
-            salesforce_fields_dict: Dictionary mapping Salesforce API names to labels
+            ventiv_fields_dict: Dictionary mapping Ventiv API names to dict with 'label' and 'type'
+            salesforce_fields_dict: Dictionary mapping Salesforce API names to dict with 'label' and 'type'
 
         Returns:
             List of match dictionaries with enhanced information
@@ -478,24 +569,28 @@ class FieldMatcher:
         print(f"\nBuilding cost matrix for {n_ventiv} Ventiv fields x {n_salesforce} Salesforce fields...")
 
         for i, ventiv_field in enumerate(ventiv_fields):
-            ventiv_label = ventiv_fields_dict[ventiv_field]
+            ventiv_info = ventiv_fields_dict[ventiv_field]
+            ventiv_label = ventiv_info['label']
+            ventiv_type = ventiv_info.get('type')
 
             for j, sf_field in enumerate(salesforce_fields):
-                sf_label = salesforce_fields_dict[sf_field]
+                sf_info = salesforce_fields_dict[sf_field]
+                sf_label = sf_info['label']
+                sf_type = sf_info.get('type')
 
-                # Calculate confidence matching Ventiv field to SF API name
-                api_scores = self.calculate_confidence(ventiv_field, sf_field)
+                # Calculate confidence matching Ventiv field to SF API name (with type info)
+                api_scores = self.calculate_confidence(ventiv_field, sf_field, ventiv_type, sf_type)
                 api_conf = api_scores['confidence']
 
-                # Calculate confidence matching Ventiv field to SF label
-                label_scores = self.calculate_confidence(ventiv_field, sf_label)
+                # Calculate confidence matching Ventiv field to SF label (with type info)
+                label_scores = self.calculate_confidence(ventiv_field, sf_label, ventiv_type, sf_type)
                 label_conf = label_scores['confidence']
 
-                # Also try matching Ventiv label to SF API and label
-                ventiv_label_to_api_scores = self.calculate_confidence(ventiv_label, sf_field)
+                # Also try matching Ventiv label to SF API and label (with type info)
+                ventiv_label_to_api_scores = self.calculate_confidence(ventiv_label, sf_field, ventiv_type, sf_type)
                 ventiv_label_to_api_conf = ventiv_label_to_api_scores['confidence']
 
-                ventiv_label_to_label_scores = self.calculate_confidence(ventiv_label, sf_label)
+                ventiv_label_to_label_scores = self.calculate_confidence(ventiv_label, sf_label, ventiv_type, sf_type)
                 ventiv_label_to_label_conf = ventiv_label_to_label_scores['confidence']
 
                 # Find the best match among all combinations
@@ -541,11 +636,16 @@ class FieldMatcher:
             sf_field = salesforce_fields[j]
             info = match_info[(i, j)]
 
+            ventiv_info = ventiv_fields_dict[ventiv_field]
+            sf_info = salesforce_fields_dict[sf_field]
+
             match_data = {
                 'ventiv_field': ventiv_field,
-                'ventiv_label': ventiv_fields_dict[ventiv_field],
+                'ventiv_label': ventiv_info['label'],
+                'ventiv_type': ventiv_info.get('type'),
                 'salesforce_field': sf_field,
-                'salesforce_label': salesforce_fields_dict[sf_field],
+                'salesforce_label': sf_info['label'],
+                'salesforce_type': sf_info.get('type'),
                 'confidence': info['scores']['confidence'],
                 'fuzzy_score': info['scores']['fuzzy_score'],
                 'semantic_score': info['scores']['semantic_score'],
@@ -815,20 +915,19 @@ def main():
     salesforce_fields_dict = matcher.load_fields_with_labels(args.salesforce)
     print(f"Loaded {len(salesforce_fields_dict)} Salesforce fields")
 
-    # Determine if we have labels (CSV format with 2 columns)
-    has_ventiv_labels = any(api != label for api, label in ventiv_fields_dict.items())
-    has_sf_labels = any(api != label for api, label in salesforce_fields_dict.items())
+    # Determine if we have labels or types
+    has_ventiv_labels = any(api != info['label'] for api, info in ventiv_fields_dict.items())
+    has_sf_labels = any(api != info['label'] for api, info in salesforce_fields_dict.items())
+    has_ventiv_types = any(info.get('type') is not None for info in ventiv_fields_dict.values())
+    has_sf_types = any(info.get('type') is not None for info in salesforce_fields_dict.values())
 
-    # Perform matching
+    # Perform matching - always use match_fields_with_labels since it handles the new structure
     print("\nPerforming fuzzy matching...")
     if has_ventiv_labels or has_sf_labels:
         print("Using API names and labels for matching...")
-        matches = matcher.match_fields_with_labels(ventiv_fields_dict, salesforce_fields_dict)
-    else:
-        print("Using API names only for matching...")
-        ventiv_fields = list(ventiv_fields_dict.keys())
-        salesforce_fields = list(salesforce_fields_dict.keys())
-        matches = matcher.match_fields(ventiv_fields, salesforce_fields)
+    if has_ventiv_types or has_sf_types:
+        print("Using field types for improved accuracy...")
+    matches = matcher.match_fields_with_labels(ventiv_fields_dict, salesforce_fields_dict)
 
     # Filter by threshold unless --show-all is specified
     if not args.show_all:

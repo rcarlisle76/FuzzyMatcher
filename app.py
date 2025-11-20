@@ -73,17 +73,12 @@ def match_fields():
         salesforce_fields_dict = matcher.load_fields_with_labels(salesforce_path)
 
         # Determine if we have labels
-        has_ventiv_labels = any(api != label for api, label in ventiv_fields_dict.items())
-        has_sf_labels = any(api != label for api, label in salesforce_fields_dict.items())
+        has_ventiv_labels = any(api != info['label'] for api, info in ventiv_fields_dict.items())
+        has_sf_labels = any(api != info['label'] for api, info in salesforce_fields_dict.items())
         has_labels = has_ventiv_labels or has_sf_labels
 
-        # Perform matching
-        if has_labels:
-            matches = matcher.match_fields_with_labels(ventiv_fields_dict, salesforce_fields_dict)
-        else:
-            ventiv_fields = list(ventiv_fields_dict.keys())
-            salesforce_fields = list(salesforce_fields_dict.keys())
-            matches = matcher.match_fields(ventiv_fields, salesforce_fields)
+        # Perform matching - always use match_fields_with_labels since it handles the new structure
+        matches = matcher.match_fields_with_labels(ventiv_fields_dict, salesforce_fields_dict)
 
         # Calculate statistics
         total_matches = len(matches)
@@ -99,24 +94,24 @@ def match_fields():
 
         if matches:
             df = pd.DataFrame(matches)
-            if 'salesforce_label' in df.columns:
-                column_map = {
-                    'ventiv_field': 'Ventiv_Field',
-                    'salesforce_field': 'Salesforce_API_Name',
-                    'salesforce_label': 'Salesforce_Label',
-                    'confidence': 'Confidence_Score',
-                    'status': 'Status',
-                    'matched_on': 'Matched_On',
-                    'matched_value': 'Matched_Value'
-                }
-            else:
-                column_map = {
-                    'ventiv_field': 'Ventiv_Field',
-                    'salesforce_field': 'Salesforce_Field',
-                    'confidence': 'Confidence_Score',
-                    'status': 'Status'
-                }
-            df = df.rename(columns=column_map)
+            # Build column mapping based on available columns
+            column_map = {
+                'ventiv_field': 'Ventiv_Field',
+                'ventiv_label': 'Ventiv_Label',
+                'ventiv_type': 'Ventiv_Type',
+                'salesforce_field': 'Salesforce_API_Name',
+                'salesforce_label': 'Salesforce_Label',
+                'salesforce_type': 'Salesforce_Type',
+                'confidence': 'Confidence_Score',
+                'fuzzy_score': 'Fuzzy_Score',
+                'semantic_score': 'Semantic_Score',
+                'status': 'Status',
+                'matched_on': 'Matched_On',
+                'matched_value': 'Matched_Value'
+            }
+            # Only rename columns that exist
+            existing_columns = {k: v for k, v in column_map.items() if k in df.columns}
+            df = df.rename(columns=existing_columns)
             df.to_csv(results_path, index=False)
 
         # Clean up uploaded files
