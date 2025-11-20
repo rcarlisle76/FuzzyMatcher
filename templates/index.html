@@ -183,20 +183,51 @@
             cursor: not-allowed;
         }
 
-        .loading {
+        .loading-overlay {
             display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .loading-overlay.active {
+            display: flex;
+        }
+
+        .loading-content {
+            background: white;
+            padding: 40px;
+            border-radius: 16px;
             text-align: center;
-            margin-top: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
         }
 
         .spinner {
-            border: 3px solid #f3f4f6;
-            border-top: 3px solid #0066cc;
+            border: 4px solid #f3f4f6;
+            border-top: 4px solid #0066cc;
             border-radius: 50%;
-            width: 40px;
-            height: 40px;
+            width: 60px;
+            height: 60px;
             animation: spin 1s linear infinite;
-            margin: 0 auto;
+            margin: 0 auto 20px;
+        }
+
+        .loading-text {
+            color: #2d3748;
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .loading-subtext {
+            color: #718096;
+            font-size: 14px;
         }
 
         @keyframes spin {
@@ -272,10 +303,14 @@
 
             <button type="submit" id="submitBtn">Match Fields</button>
         </form>
+    </div>
 
-        <div class="loading" id="loading">
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-content">
             <div class="spinner"></div>
-            <p style="margin-top: 15px; color: #4a5568;">Processing your files...</p>
+            <div class="loading-text">Analyzing Field Matches</div>
+            <div class="loading-subtext">This may take a moment...</div>
         </div>
     </div>
 
@@ -296,10 +331,10 @@
             document.getElementById('threshold-value').textContent = e.target.value + '%';
         });
 
-        // Form submission
+        // Form submission with loading overlay
         document.getElementById('uploadForm').addEventListener('submit', function(e) {
             document.getElementById('submitBtn').disabled = true;
-            document.getElementById('loading').style.display = 'block';
+            document.getElementById('loadingOverlay').classList.add('active');
         });
     </script>
 </body>
