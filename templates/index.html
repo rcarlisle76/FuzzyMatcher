@@ -202,37 +202,47 @@
 
         .loading-content {
             background: white;
-            padding: 40px;
+            padding: 50px 60px;
             border-radius: 16px;
             text-align: center;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            min-width: 400px;
+            max-width: 500px;
         }
 
-        .spinner {
-            border: 4px solid #f3f4f6;
-            border-top: 4px solid #0066cc;
-            border-radius: 50%;
-            width: 60px;
-            height: 60px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 20px;
+        .loading-icon {
+            font-size: 48px;
+            margin-bottom: 20px;
+            animation: pulse 2s ease-in-out infinite;
         }
 
-        .loading-text {
-            color: #2d3748;
-            font-size: 18px;
+        .loading-message {
+            color: #0066cc;
+            font-size: 16px;
             font-weight: 600;
-            margin-bottom: 10px;
+            min-height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 20px;
+            line-height: 1.5;
         }
 
         .loading-subtext {
             color: #718096;
             font-size: 14px;
+            margin-top: 15px;
         }
 
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+            50% {
+                transform: scale(1.1);
+                opacity: 0.8;
+            }
         }
     </style>
 </head>
@@ -308,13 +318,37 @@
     <!-- Loading Overlay -->
     <div class="loading-overlay" id="loadingOverlay">
         <div class="loading-content">
-            <div class="spinner"></div>
-            <div class="loading-text">Analyzing Field Matches</div>
-            <div class="loading-subtext">This may take a moment...</div>
+            <div class="loading-icon">⚙️</div>
+            <div class="loading-message" id="loadingMessage">Initializing field matching engine...</div>
+            <div class="loading-subtext">Please wait while we process your data</div>
         </div>
     </div>
 
     <script>
+        // IT-related loading messages
+        const loadingMessages = [
+            "⚙️ Initializing field matching engine...",
+            "🔍 Parsing CSV data structures...",
+            "🧠 Loading fuzzy matching algorithms...",
+            "📊 Analyzing field metadata...",
+            "🔗 Building relationship matrices...",
+            "🎯 Computing semantic similarities...",
+            "📈 Optimizing match confidence scores...",
+            "🔄 Running Hungarian algorithm...",
+            "🧮 Calculating type compatibility...",
+            "💡 Applying machine learning models...",
+            "📋 Normalizing field identifiers...",
+            "🔎 Detecting naming patterns...",
+            "⚡ Processing label mappings...",
+            "🎲 Evaluating match permutations...",
+            "🔐 Validating data integrity...",
+            "📦 Compiling results dataset...",
+            "✨ Finalizing field mappings..."
+        ];
+
+        let messageIndex = 0;
+        let messageInterval;
+
         // File name display
         document.getElementById('ventiv_file').addEventListener('change', function(e) {
             const fileName = e.target.files[0]?.name || '';
@@ -335,6 +369,20 @@
         document.getElementById('uploadForm').addEventListener('submit', function(e) {
             document.getElementById('submitBtn').disabled = true;
             document.getElementById('loadingOverlay').classList.add('active');
+
+            // Start rotating messages
+            messageIndex = 0;
+            messageInterval = setInterval(function() {
+                const messageParts = loadingMessages[messageIndex].split(' ');
+                const icon = messageParts[0];
+                const text = messageParts.slice(1).join(' ');
+
+                // Update icon and message
+                document.querySelector('.loading-icon').textContent = icon;
+                document.getElementById('loadingMessage').textContent = text;
+
+                messageIndex = (messageIndex + 1) % loadingMessages.length;
+            }, 2000); // Change message every 2 seconds
         });
     </script>
 </body>
